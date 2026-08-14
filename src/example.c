@@ -1,221 +1,244 @@
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 #include "protocol.h"
 
-/* Example showing how to override configuration values */
-/* Uncomment the following lines to override default values before including protocol_config.h */
-/*
-#define PROTO_MAX_PAYLOAD_LENGTH      128u    // Reduce max payload to 128 bytes
-#define STREAM_TX_TIMEOUT_CONN        200u    // Increase connection timeout
-#define STREAM_TX_TIMEOUT_ACK         100u    // Increase ACK timeout
-#define STREAM_RX_TIMEOUT_ACK_TURN    100u    // Increase ACK turn timeout
-#define STREAM_RX_TIMEOUT_WAITING     2000u   // Increase waiting timeout
+/* Example demonstrating a WRITE then READ sequence between two nodes:
+   Node 0x00 writes "Hello World!" to a register in Node 0x01,
+   then Node 0x00 tries to read that register and prints the result.
 */
-#include "protocol_config.h"
 
-/* Simple example showing how to use the protocol for datagram communication */
+/* Buffers for simulated communication between two nodes */
+#define BUFFER_SIZE 256
+static uint8_t tx_buffers[2][BUFFER_SIZE];
+static uint8_t rx_buffers[2][BUFFER_SIZE];
+static size_t tx_lens[2] = {0, 0};
+static size_t rx_lens[2] = {0, 0};
+static size_t rx_pos[2] = {0, 0};
 
-/* Separate buffers for TX and RX to avoid interference */
-static uint8_t tx_buffer[256];
-static uint8_t rx_buffer[256];
-static size_t tx_len = 0;
-static size_t rx_len = 0;
-static size_t rx_pos = 0;
+/* Track which node's protocol is currently active */
+static int current_node = -1;
 
-/* Simple transmit function - sends data to "receiver" */
+/* Simulated register in Node 0x01 */
+static uint8_t reg[255];
+static size_t reg_len = 0;
+
+/* TX callback: append byte to the current node's transmit buffer */
 static void tx_byte(uint8_t b)
 {
-    if (tx_len < sizeof(tx_buffer))
+    if (current_node < 0 || current_node >= 2) return;
+    if (tx_lens[current_node] < BUFFER_SIZE)
     {
-        tx_buffer[tx_len++] = b;
+        tx_buffers[current_node][tx_lens[current_node]++] = b;
     }
 }
 
-/* Simple receive function - gets data from "transmitter" */
+/* RX callback: read byte from the current node's receive buffer */
 static uint8_t rx_byte(void)
 {
-    // If we have unread data in rx_buffer, return it
-    if (rx_pos < rx_len)
+    if (current_node < 0 || current_node >= 2) return 0;
+    if (rx_pos[current_node] < rx_lens[current_node])
     {
-        return rx_buffer[rx_pos++];
+        return rx_buffers[current_node][rx_pos[current_node]++];
     }
-    
-    // Otherwise, check if there's new data in tx_buffer to process
-    if (tx_len > 0)
+    return 0; /* No data available */
+}
+
+/* Initialize the protocol for the current node */
+static void proto_init_current(void)
+{
+    proto_init(tx_byte, rx_byte);
+}
+
+/* Helper to print payload as hex and ASCII */
+static void print_payload(const char *label, const uint8_t *data, size_t len)
+{
+    printf("%s", label);
+    for (size_t i = 0; i < len; i++)
     {
-        // Copy all data from tx_buffer to rx_buffer
-        if (rx_len + tx_len <= sizeof(rx_buffer))
-        {
-            memcpy(&rx_buffer[rx_len], tx_buffer, tx_len);
-            rx_len += tx_len;
-        }
-        
-        // Clear tx_buffer since we've "transmitted" the data
-        tx_len = 0;
-        
-        // Now return the first byte if available
-        if (rx_pos < rx_len)
-        {
-            return rx_buffer[rx_pos++];
-        }
+        printf("%02x ", data[i]);
     }
-    
-    return 0; /* Indicate no data available */
+    printf(" (ASCII: \"");
+    for (size_t i = 0; i < len; i++)
+    {
+        if (data[i] >= 32 && data[i] <= 126)
+            printf("%c", data[i]);
+        else
+            printf("<%02x>", data[i]);
+    }
+    printf("\")\n");
+}
+
+/* Simulate a transmission from node 'from' to node 'to' */
+static void simulate_transmit(int from, int to, uint8_t addr, uint8_t broadcast, uint8_t type, const uint8_t *payload, size_t len)
+{
+    proto_result_t res;
+
+    /* Step 1: Prepare the transmitter (node 'from') */
+    current_node = from;
+    proto_init_current();
+    tx_lens[from] = 0; /* Clear transmit buffer */
+    rx_lens[from] = 0; /* Clear receive buffer (not used for tx, but clean) */
+    rx_pos[from] = 0;
+
+    /* Step 2: Transmit the frame */
+    res = proto_send_datagram(addr, broadcast, type, payload, len);
+    if (res != PROTO_RESULT_OK)
+    {
+        printf("Node 0x%02X: Failed to send datagram: %d\n", from, res);
+        return;
+    }
+    printf("Node 0x%02X TX: ", from);
+    for (size_t i = 0; i < tx_lens[from]; i++)
+    {
+        printf("%02x ", tx_buffers[from][i]);
+    }
+    printf("\n");
+
+    /* Step 3: Copy the transmitted bytes to the receiver's buffer */
+    tx_lens[to] = 0; /* Clear the receiver's transmit buffer (we don't want old tx data) */
+    rx_lens[to] = tx_lens[from]; /* The receiver gets exactly what was transmitted */
+    rx_pos[to] = 0; /* Start reading from the beginning */
+    for (size_t i = 0; i < tx_lens[from]; i++)
+    {
+        rx_buffers[to][i] = tx_buffers[from][i];
+    }
+    printf("Node 0x%02X RX buffer loaded: ", to);
+    for (size_t i = 0; i < rx_lens[to]; i++)
+    {
+        printf("%02x ", rx_buffers[to][i]);
+    }
+    printf("\n");
+
+    /* Step 4: Prepare the receiver (node 'to') to process the incoming bytes */
+    current_node = to;
+    proto_init_current();
+    /* Note: the receiver's transmit buffer is already cleared above */
 }
 
 int main(void)
 {
-    printf("=== Protocol Datagram Example (Loop Mode) ===\n");
-    printf("Configuration:\n");
-    printf("  Max Payload Length: %u bytes\n", PROTO_MAX_PAYLOAD_LENGTH);
-    printf("  Frame Buffer Size: %u bytes\n", PROTO_MAX_PAYLOAD_LENGTH + 5);
-    printf("  Stream TX Max Receivers: %u\n", STREAM_TX_MAX_RECEIVERS);
-    printf("  Stream TX Timeout Conn: %u polls\n", STREAM_TX_TIMEOUT_CONN);
-    printf("  Stream TX Timeout Ack: %u polls\n", STREAM_TX_TIMEOUT_ACK);
-    printf("  Stream TX Max Retries: %u\n", STREAM_TX_MAX_RETRIES);
-    printf("  Stream RX Timeout Ack Turn: %u polls\n", STREAM_RX_TIMEOUT_ACK_TURN);
-    printf("  Stream RX Timeout Waiting: %u polls\n", STREAM_RX_TIMEOUT_WAITING);
-    printf("\n");
+    proto_result_t res;
 
-    /* Initialize the protocol */
-    proto_init(tx_byte, rx_byte);
+    printf("=== Protocol WRITE/READ Example between Node 0x00 and Node 0x01 ===\n\n");
 
-    /* Run in a loop to continuously send and receive datagrams */
-    int iteration = 0;
-    while (1)
+    /* Clear all buffers initially */
+    for (int i = 0; i < 2; i++)
     {
-        iteration++;
-        printf("--- Iteration %d ---\n", iteration);
+        tx_lens[i] = 0;
+        rx_lens[i] = 0;
+        rx_pos[i] = 0;
+    }
 
-        /* Create a payload with iteration data */
-        uint8_t payload[10];
-        payload[0] = 'I';
-        payload[1] = 'T';
-        payload[2] = ' ';
-        payload[3] = (iteration / 1000) + '0';  // Thousands digit
-        payload[4] = ((iteration % 1000) / 100) + '0';  // Hundreds digit
-        payload[5] = ((iteration % 100) / 10) + '0';    // Tens digit
-        payload[6] = (iteration % 10) + '0';            // Ones digit
-        payload[7] = '\r';
-        payload[8] = '\n';
-        payload[9] = 0;  // Null terminator for string operations
-        
-        uint8_t payload_len = 9;  // Length without null terminator
+    /* ------------------- Phase 1: Node 0x00 writes to Node 0x01 ------------------- */
+    printf("--- Phase 1: Node 0x00 writes \"Hello World!\" to Node 0x01 ---\n");
 
-        /* Clear buffers for this iteration */
-        tx_len = 0;
-        rx_len = 0;
-        rx_pos = 0;
-        
-        printf("TX: Sending datagram to addr=0x21, type=READ(0), payload=\"");
-        for (int i = 0; i < payload_len; i++)
-        {
-            printf("%c", payload[i]);
-        }
-        printf("\" (hex: ");
-        for (int i = 0; i < payload_len; i++)
-        {
-            printf("%02x ", payload[i]);
-        }
-        printf(")\n");
+    const uint8_t write_payload[] = "Hello World!";
+    const size_t write_payload_len = sizeof(write_payload) - 1; /* exclude null terminator */
 
-        /* Send a datagram: type READ (0x00), address 0x21, broadcast 0 (unicast) */
-        proto_result_t result = proto_send_datagram(0x21, 0, 0, payload, payload_len);
-        if (result != PROTO_RESULT_OK)
-        {
-            printf("TX: Failed to send datagram: %d\n", result);
-        }
-        else
-        {
-            printf("TX: Datagram sent successfully\n");
-        }
+    /* Simulate transmission from node 0x00 to node 0x01 */
+    /* Address: 0x01 (destination node), Type: 0x01 (WRITE) */
+    simulate_transmit(0, 1, 0x01, 0, 0x01, write_payload, write_payload_len);
 
-        /* Poll several times to allow transmission and reception */
-        for (int poll_count = 0; poll_count < 20; poll_count++)
+    /* Now, node 0x01 should have the frame in its receive buffer.
+       We need to let node 0x01 process it by calling proto_poll(). */
+    current_node = 1;
+    proto_init_current();
+    /* We'll call proto_poll() enough times to process the entire frame */
+    /* The frame length is: 3 (header) + write_payload_len + 2 (CRC) */
+    int frame_len = 3 + write_payload_len + 2;
+    for (int i = 0; i < frame_len * 2; i++) /* extra polls for safety */
+    {
+        proto_poll();
+    }
+
+    /* Check if node 0x01 received a frame */
+    uint8_t addr, broadcast, type;
+    uint8_t rx_payload[255];
+    uint8_t len;
+    res = proto_recv_datagram(&addr, &broadcast, &type, rx_payload, &len);
+    if (res == PROTO_RESULT_OK && broadcast == 0 && addr == 0x01 && type == 0x01) /* WRITE */
+    {
+        /* Store the payload in the simulated register */
+        memcpy(reg, rx_payload, len);
+        reg_len = len;
+        print_payload("Node 0x01 RX: Stored in register: ", reg, reg_len);
+        print_payload("Node 0x01 RX: Stored in register: ", reg, reg_len);
+    }
+    else
+    {
+        printf("Node 0x01: Did not receive expected WRITE frame (res=%d, addr=0x%02x, broadcast=%d, type=%d)\n",
+               res, addr, broadcast, type);
+    }
+
+    /* Clear node 0x01's receive buffer for the next phase */
+    rx_lens[1] = 0;
+    rx_pos[1] = 0;
+
+    /* ------------------- Phase 2: Node 0x00 reads from Node 0x01 ------------------- */
+    printf("\n--- Phase 2: Node 0x00 reads register from Node 0x01 ---\n");
+
+    /* Node 0x00 sends a READ datagram to Node 0x01.
+       We'll send a dummy register address (0x00) as payload (length 1). */
+    const uint8_t read_addr = 0x00;
+    /* Simulate transmission from node 0x00 to node 0x01 */
+    /* Address: 0x01 (destination node), Type: 0x00 (READ) */
+    simulate_transmit(0, 1, 0x01, 0, 0x00, &read_addr, 1);
+
+    /* Now, node 0x01 should have the READ request in its receive buffer.
+       Let node 0x01 process it. */
+    current_node = 1;
+    proto_init_current();
+    int frame_len_read = 3 + 1 + 2; /* header + payload (1 byte) + CRC */
+    for (int i = 0; i < frame_len_read * 2; i++)
+    {
+        proto_poll();
+    }
+
+    /* Check if node 0x01 received the READ request */
+    res = proto_recv_datagram(&addr, &broadcast, &type, rx_payload, &len);
+    if (res == PROTO_RESULT_OK && broadcast == 0 && addr == 0x01 && type == 0x00) /* READ */
+    {
+        /* Node 0x01 received a READ request; respond with the register contents */
+        printf("Node 0x01 RX: Received READ request, sending register contents...\n");
+        /* Simulate transmission from node 0x01 to node 0x00 */
+        /* Address: 0x00 (destination node), Type: 0x01 (WRITE) */
+        simulate_transmit(1, 0, 0x00, 0, 0x01, reg, reg_len);
+
+        /* Now, node 0x00 should have the response in its receive buffer.
+           Let node 0x00 process it. */
+        current_node = 0;
+        proto_init_current();
+        int frame_len = 3 + reg_len + 2;
+        for (int i = 0; i < frame_len * 2; i++)
         {
             proto_poll();
         }
 
-        /* Try to receive a datagram */
-        uint8_t addr, broadcast, type;
-        uint8_t rx_payload[255];
-        uint8_t len;
-        result = proto_recv_datagram(&addr, &broadcast, &type, rx_payload, &len);
-        
-        if (result == PROTO_RESULT_OK)
+        /* Check if node 0x00 received the response */
+        res = proto_recv_datagram(&addr, &broadcast, &type, rx_payload, &len);
+        if (res == PROTO_RESULT_OK && broadcast == 0 && addr == 0x00 && type == 0x01) /* WRITE */
         {
-            printf("RX: Received datagram: addr=0x%02x, broadcast=%d, type=%d, len=%d\n", 
-                   addr, broadcast, type, len);
-            printf("RX: Payload (ASCII): \"");
-            for (int i = 0; i < len; i++)
+            print_payload("Node 0x00 RX: Received register contents: ", rx_payload, len);
+            printf("\n=== RESULT: Node 0x00 successfully read \"");
+            for (size_t i = 0; i < len; i++)
             {
-                // Only print printable characters, otherwise show hex
                 if (rx_payload[i] >= 32 && rx_payload[i] <= 126)
-                {
                     printf("%c", rx_payload[i]);
-                }
                 else
-                {
                     printf("<%02x>", rx_payload[i]);
-                }
             }
-            printf("\" (hex: ");
-            for (int i = 0; i < len; i++)
-            {
-                printf("%02x ", rx_payload[i]);
-            }
-            printf(")\n");
-            
-            // Check if we got back what we sent
-            if (len == payload_len && memcmp(rx_payload, payload, payload_len) == 0)
-            {
-                printf("RX: Payload matches transmitted data! ✓\n");
-            }
-            else
-            {
-                printf("RX: Payload differs from transmitted data! ✗\n");
-                printf("         Expected: ");
-                for (int i = 0; i < payload_len; i++)
-                {
-                    printf("%02x ", payload[i]);
-                }
-                printf("\n");
-                printf("         Got:      ");
-                for (int i = 0; i < len; i++)
-                {
-                    printf("%02x ", rx_payload[i]);
-                }
-                printf("\n");
-            }
+            printf("\" from Node 0x01's register ===\n");
         }
         else
         {
-            printf("RX: No datagram received: %d\n", result);
-            // Debug: show what's in our buffers
-            printf("         Buffer state: tx_len=%zu, rx_len=%zu, rx_pos=%zu\n", tx_len, rx_len, rx_pos);
-            if (rx_len > 0)
-            {
-                printf("         RX buffer contents: ");
-                for (size_t i = 0; i < rx_len; i++)
-                {
-                    printf("%02x ", rx_buffer[i]);
-                }
-                printf("\n");
-            }
+            printf("Node 0x00: Did not receive expected response frame (res=%d, addr=0x%02x, broadcast=%d, type=%d)\n",
+                   res, addr, broadcast, type);
         }
-
-        printf("\n");
-        
-        /* Small delay to make output readable */
-        usleep(500000);  // 500ms delay
-        
-        /* Exit after 10 iterations for demo purposes */
-        if (iteration >= 10)
-        {
-            printf("=== Demo completed after %d iterations ===\n", iteration);
-            break;
-        }
+    }
+    else
+    {
+        printf("Node 0x01: Did not receive expected READ frame (res=%d, addr=0x%02x, broadcast=%d, type=%d)\n",
+               res, addr, broadcast, type);
     }
 
     return 0;
