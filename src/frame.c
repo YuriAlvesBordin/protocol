@@ -1,5 +1,6 @@
 #include "frame.h"
 #include "crc16.h"
+#include "protocol_config.h"
 
 #define FRAME_SYNC_MASK          0xC0
 #define FRAME_SYNC_VALUE         0xC0
@@ -48,9 +49,9 @@ frame_result_t frame_parser_parse_byte(frame_parser_t *parser, uint8_t byte, uin
                 parser->state = FRAME_STATE_SEEK_SYNC;
                 result = FRAME_RESULT_ERROR_LENGTH;
             }
-            else if (parser->length > 255)
+            else if (parser->length > PROTO_MAX_PAYLOAD_LENGTH)
             {
-                // This should not happen because byte is 0-255, but we check for safety
+                // Length exceeds maximum allowed payload length
                 parser->state = FRAME_STATE_SEEK_SYNC;
                 result = FRAME_RESULT_ERROR_LENGTH;
             }
@@ -85,7 +86,7 @@ frame_result_t frame_parser_parse_byte(frame_parser_t *parser, uint8_t byte, uin
                 uint16_t received_crc = (uint16_t)parser->crc_bytes[0] | ((uint16_t)parser->crc_bytes[1] << 8);
 
                 // Compute CRC over control, address, length, and payload
-                uint8_t crc_buffer[258]; // max 3 + 255
+                uint8_t crc_buffer[PROTO_CRC_BUFFER_SIZE]; // max 3 + PROTO_MAX_PAYLOAD_LENGTH
                 uint8_t *crc_ptr = crc_buffer;
                 *crc_ptr++ = parser->control;
                 *crc_ptr++ = parser->address;
@@ -130,6 +131,13 @@ frame_result_t frame_parser_parse_byte(frame_parser_t *parser, uint8_t byte, uin
 
 void frame_build(uint8_t control, uint8_t address, const uint8_t *payload, uint8_t len, uint8_t *out_buffer, uint8_t *out_length)
 {
+    // Check length validity
+    if (len == 0 || len > PROTO_MAX_PAYLOAD_LENGTH)
+    {
+        *out_length = 0;
+        return;
+    }
+
     // Build the frame: control, address, length, payload, CRC
     uint8_t *ptr = out_buffer;
     *ptr++ = control;
@@ -141,7 +149,7 @@ void frame_build(uint8_t control, uint8_t address, const uint8_t *payload, uint8
     }
 
     // Compute CRC over control, address, length, and payload
-    uint8_t crc_buffer[258]; // max 3 + 255
+    uint8_t crc_buffer[PROTO_CRC_BUFFER_SIZE]; // max 3 + PROTO_MAX_PAYLOAD_LENGTH
     uint8_t *crc_ptr = crc_buffer;
     *crc_ptr++ = control;
     *crc_ptr++ = address;

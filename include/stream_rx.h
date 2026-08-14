@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "frame.h"
+#include "protocol_config.h"
 
 /**
  * @brief Streaming receiver states

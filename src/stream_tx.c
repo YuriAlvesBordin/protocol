@@ -2,11 +2,7 @@
 #include "frame.h"
 #include "crc16.h"
 #include <string.h>
-
-#define STREAM_TX_TIMEOUT_CONN   (100)
-#define STREAM_TX_TIMEOUT_ACK    (50)
-#define STREAM_TX_MAX_RETRIES    (3)
-#define STREAM_TX_MAX_RECEIVERS  255
+#include "protocol_config.h"
 
 // Helper to build control byte
 static uint8_t build_control(uint8_t type, uint8_t broadcast)
@@ -272,13 +268,8 @@ void stream_tx_poll(stream_tx_t *ctx)
                     ctx->timeout_counter = STREAM_TX_TIMEOUT_CONN;
                 }
             }
-            // If we are in this state and timeout_counter just reached 0, we will send the CONN_REQ in the next poll? We need to send it now.
-            // We'll send the CONN_REQ when we enter the state or when we timeout and move to the next receiver.
-            // We'll send it when we set the timeout_counter and when we decrement and it becomes 0? We'll send it when we are about to wait for a response.
-            // Let's send the CONN_REQ when we set the timeout_counter (at the start of the state and after each timeout).
-            // We'll do the sending in this block after setting the timeout_counter.
-            // We'll send the CONN_REQ for the current_receiver_index.
-            if (ctx->current_receiver_index < ctx->receiver_count)
+            // Send CONN_REQ for the current receiver if we're in this state
+            if (ctx->state == STREAM_TX_STATE_SENDING_CONN_REQ && ctx->current_receiver_index < ctx->receiver_count)
             {
                 uint8_t receiver_id = ctx->receiver_list[ctx->current_receiver_index];
                 // Build CONN_REQ frame: transmitter_id, session_id, requested_ack_slot (we'll use 0)

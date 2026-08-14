@@ -2,6 +2,7 @@
 #define FRAME_H
 
 #include <stdint.h>
+#include "protocol_config.h"
 
 /**
  * @brief Frame parser states
@@ -34,7 +35,7 @@ typedef struct {
     uint8_t control;
     uint8_t address;
     uint8_t length;
-    uint8_t payload[255];
+    uint8_t payload[PROTO_MAX_PAYLOAD_LENGTH];
     uint8_t payload_index;
     uint8_t crc_byte_index;
     uint8_t crc_bytes[2];

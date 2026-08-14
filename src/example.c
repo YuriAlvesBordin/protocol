@@ -2,6 +2,17 @@
 #include <string.h>
 #include "protocol.h"
 
+/* Example showing how to override configuration values */
+/* Uncomment the following lines to override default values before including protocol_config.h */
+/*
+#define PROTO_MAX_PAYLOAD_LENGTH      128u    // Reduce max payload to 128 bytes
+#define STREAM_TX_TIMEOUT_CONN        200u    // Increase connection timeout
+#define STREAM_TX_TIMEOUT_ACK         100u    // Increase ACK timeout
+#define STREAM_RX_TIMEOUT_ACK_TURN    100u    // Increase ACK turn timeout
+#define STREAM_RX_TIMEOUT_WAITING     2000u   // Increase waiting timeout
+*/
+#include "protocol_config.h"
+
 /* Simple example showing how to use the protocol for datagram communication */
 
 /* Transmission buffer for loopback test */
@@ -30,10 +41,21 @@ static uint8_t rx_byte(void)
 
 int main(void)
 {
+    printf("Protocol Configuration:\n");
+    printf("  Max Payload Length: %u bytes\n", PROTO_MAX_PAYLOAD_LENGTH);
+    printf("  Frame Buffer Size: %u bytes\n", PROTO_MAX_PAYLOAD_LENGTH + 5);
+    printf("  Stream TX Max Receivers: %u\n", STREAM_TX_MAX_RECEIVERS);
+    printf("  Stream TX Timeout Conn: %u polls\n", STREAM_TX_TIMEOUT_CONN);
+    printf("  Stream TX Timeout Ack: %u polls\n", STREAM_TX_TIMEOUT_ACK);
+    printf("  Stream TX Max Retries: %u\n", STREAM_TX_MAX_RETRIES);
+    printf("  Stream RX Timeout Ack Turn: %u polls\n", STREAM_RX_TIMEOUT_ACK_TURN);
+    printf("  Stream RX Timeout Waiting: %u polls\n", STREAM_RX_TIMEOUT_WAITING);
+    printf("\n");
+
     /* Initialize the protocol */
     proto_init(tx_byte, rx_byte);
 
-    /* Send a datagram: type READ (0x01), address 0x21, broadcast 0 (unicast), payload "Hello" */
+    /* Send a datagram: type READ (0x00), address 0x21, broadcast 0 (unicast), payload "Hello" */
     uint8_t payload[] = { 'H', 'e', 'l', 'l', 'o' };
     proto_result_t result = proto_send_datagram(0x21, 0, 0, payload, sizeof(payload));
     if (result != PROTO_RESULT_OK)

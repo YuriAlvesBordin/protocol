@@ -2,6 +2,7 @@
 #define STREAM_TX_H
 
 #include <stdint.h>
+#include "protocol_config.h"
 
 /**
  * @brief Streaming transmitter states
@@ -21,11 +22,11 @@ typedef struct {
     stream_tx_state_t state;
     uint8_t transmitter_id;
     uint8_t session_id;
-    uint8_t receiver_list[255];
+    uint8_t receiver_list[STREAM_TX_MAX_RECEIVERS];
     uint8_t receiver_count;
     uint8_t current_block;
     uint8_t retry_count;
-    uint8_t ack_received[255]; // One per receiver in the list
+    uint8_t ack_received[STREAM_TX_MAX_RECEIVERS]; // One per receiver in the list
     uint8_t current_receiver_index; // Index of the receiver we are currently trying to connect to
     uint16_t timeout_counter;
     void (*tx_byte)(uint8_t); // Callback to transmit a byte
