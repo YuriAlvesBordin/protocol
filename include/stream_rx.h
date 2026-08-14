@@ -1,3 +1,4 @@
+#include "protocol.h"
 #ifndef STREAM_RX_H
 #define STREAM_RX_H
 

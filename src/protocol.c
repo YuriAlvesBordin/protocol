@@ -14,6 +14,7 @@ typedef struct {
     uint8_t frame_valid;
     stream_tx_t stream_tx;
     stream_rx_t stream_rx;
+    frame_parser_t frame_parser;
 } protocol_t;
 
 static protocol_t ctx;
