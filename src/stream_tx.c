@@ -28,6 +28,7 @@ void stream_tx_init(stream_tx_t *ctx, void (*tx_byte)(uint8_t))
 
 proto_result_t stream_tx_start(stream_tx_t *ctx, uint8_t transmitter_id, uint8_t session_id, const uint8_t *receiver_list, uint8_t receiver_count, uint8_t initial_ack_slot)
 {
+    (void)initial_ack_slot; 
     if (ctx->state != STREAM_TX_STATE_IDLE)
     {
         return PROTO_RESULT_ERROR_STATE;
@@ -226,6 +227,7 @@ void stream_tx_handle_byte(stream_tx_t *ctx, uint8_t byte)
                 uint8_t transmitter_id = out_payload[0];
                 uint8_t session_id = out_payload[1];
                 uint8_t reason = out_payload[2];
+                (void)reason; 
 
                 if (transmitter_id == ctx->transmitter_id && session_id == ctx->session_id)
                 {
@@ -442,6 +444,7 @@ proto_result_t stream_tx_send_block(stream_tx_t *ctx, const uint8_t *data)
 
 void stream_tx_close(stream_tx_t *ctx, uint8_t reason)
 {
+    (void)reason; 
     if (ctx->state == STREAM_TX_STATE_STREAM_SENDING || ctx->state == STREAM_TX_STATE_WAIT_ACKS)
     {
         ctx->state = STREAM_TX_STATE_CLOSING;
