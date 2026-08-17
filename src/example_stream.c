@@ -7,42 +7,65 @@
    They perform handshake, transmit a few blocks of data, and then close the connection.
 */
 
-/* Buffers for simulated communication between two nodes */
-#define BUFFER_SIZE 256
-static uint8_t tx_buffers[2][BUFFER_SIZE];
-static uint8_t rx_buffers[2][BUFFER_SIZE];
-static size_t tx_lens[2] = {0, 0};
-static size_t rx_lens[2] = {0, 0};
-static size_t rx_pos[2] = {0, 0};
+/* Simulated unidirectional mediums: 0->1 and 1->0 */
+#define MEDIUM_SIZE 256
+static uint8_t medium_0_to_1[MEDIUM_SIZE];
+static size_t medium_0_to_1_write = 0;
+static size_t medium_0_to_1_read = 0;
 
-/* Track which node's protocol is currently active */
-static int current_node = -1;
+static uint8_t medium_1_to_0[MEDIUM_SIZE];
+static size_t medium_1_to_0_write = 0;
+static size_t medium_1_to_0_read = 0;
 
-/* TX callback: append byte to the current node's transmit buffer */
-static void tx_byte(uint8_t b)
+/* Helper to reset mediums */
+static void medium_reset(void)
 {
-    if (current_node < 0 || current_node >= 2) return;
-    if (tx_lens[current_node] < BUFFER_SIZE)
+    medium_0_to_1_write = medium_0_to_1_read = 0;
+    medium_1_to_0_write = medium_1_to_0_read = 0;
+}
+
+/* TX callback for node 0: append byte to medium_0_to_1 */
+static void tx_byte_0(uint8_t b)
+{
+    if ((medium_0_to_1_write + 1) % MEDIUM_SIZE != medium_0_to_1_read)
     {
-        tx_buffers[current_node][tx_lens[current_node]++] = b;
+        medium_0_to_1[medium_0_to_1_write] = b;
+        medium_0_to_1_write = (medium_0_to_1_write + 1) % MEDIUM_SIZE;
     }
 }
 
-/* RX callback: read byte from the current node's receive buffer */
-static uint8_t rx_byte(void)
+/* RX callback for node 0: read byte from medium_1_to_0 */
+static uint8_t rx_byte_0(void)
 {
-    if (current_node < 0 || current_node >= 2) return 0;
-    if (rx_pos[current_node] < rx_lens[current_node])
+    if (medium_1_to_0_read != medium_1_to_0_write)
     {
-        return rx_buffers[current_node][rx_pos[current_node]++];
+        uint8_t b = medium_1_to_0[medium_1_to_0_read];
+        medium_1_to_0_read = (medium_1_to_0_read + 1) % MEDIUM_SIZE;
+        return b;
     }
     return 0; /* No data available */
 }
 
-/* Initialize the protocol for the current node */
-static void proto_init_current(void)
+/* TX callback for node 1: append byte to medium_1_to_0 */
+static void tx_byte_1(uint8_t b)
 {
-    proto_init(tx_byte, rx_byte);
+    if ((medium_1_to_0_write + 1) % MEDIUM_SIZE != medium_1_to_0_read)
+    {
+        medium_1_to_0[medium_1_to_0_write] = b;
+        medium_1_to_0_write = (medium_1_to_0_write + 1) % MEDIUM_SIZE;
+    }
+}
+
+/* RX callback for node 1: read byte from medium_0_to_1 */
+static uint8_t rx_byte_1(void)
+{
+    if (medium_0_to_1_read != medium_0_to_1_write)
+    {
+        uint8_t b = medium_0_to_1[medium_0_to_1_read];
+        medium_0_to_1_read = (medium_0_to_1_read + 1) % MEDIUM_SIZE;
+        return b;
+    }
+    return 0; /* No data available */
 }
 
 /* Helper to print payload as hex and ASCII */
@@ -64,66 +87,19 @@ static void print_payload(const char *label, const uint8_t *data, size_t len)
     printf("\")\n");
 }
 
-/* Simulate a transmission from node 'from' to node 'to' */
-static void simulate_transmit(int from, int to, uint8_t addr, uint8_t broadcast, uint8_t type, const uint8_t *payload, size_t len)
-{
-    proto_result_t res;
-
-    /* Step 1: Prepare the transmitter (node 'from') */
-    current_node = from;
-    proto_init_current();
-    tx_lens[from] = 0; /* Clear transmit buffer */
-    rx_lens[from] = 0; /* Clear receive buffer (not used for tx, but clean) */
-    rx_pos[from] = 0;
-
-    /* Step 2: Transmit the frame */
-    res = proto_send_datagram(addr, broadcast, type, payload, len);
-    if (res != PROTO_RESULT_OK)
-    {
-        printf("Node 0x%02X: Failed to send datagram: %d\n", from, res);
-        return;
-    }
-    printf("Node 0x%02X TX: ", from);
-    for (size_t i = 0; i < tx_lens[from]; i++)
-    {
-        printf("%02x ", tx_buffers[from][i]);
-    }
-    printf("\n");
-
-    /* Step 3: Copy the transmitted bytes to the receiver's buffer */
-    tx_lens[to] = 0; /* Clear the receiver's transmit buffer (we don't want old tx data) */
-    rx_lens[to] = tx_lens[from]; /* The receiver gets exactly what was transmitted */
-    rx_pos[to] = 0; /* Start reading from the beginning */
-    for (size_t i = 0; i < tx_lens[from]; i++)
-    {
-        rx_buffers[to][i] = tx_buffers[from][i];
-    }
-    printf("Node 0x%02X RX buffer loaded: ", to);
-    for (size_t i = 0; i < rx_lens[to]; i++)
-    {
-        printf("%02x ", rx_buffers[to][i]);
-    }
-    printf("\n");
-
-    /* Step 4: Prepare the receiver (node 'to') to process the incoming bytes */
-    current_node = to;
-    proto_init_current();
-    /* Note: the receiver's transmit buffer is already cleared above */
-}
-
 int main(void)
 {
-    proto_result_t res;
-
     printf("=== Protocol Streaming Mode Example between Node 0x00 (TX) and Node 0x01 (RX) ===\n\n");
 
-    /* Clear all buffers initially */
-    for (int i = 0; i < 2; i++)
-    {
-        tx_lens[i] = 0;
-        rx_lens[i] = 0;
-        rx_pos[i] = 0;
-    }
+    /* Reset mediums */
+    medium_reset();
+
+    /* Create protocol contexts for each node */
+    protocol_t ctx[2];
+
+    /* Initialize each protocol instance with its own TX/RX callbacks */
+    proto_init(&ctx[0], tx_byte_0, rx_byte_0); /* Node 0x00 */
+    proto_init(&ctx[1], tx_byte_1, rx_byte_1); /* Node 0x01 */
 
     /* ------------------- Phase 1: Handshake ------------------- */
     printf("--- Phase 1: Handshake (CONN_REQ / CONN_ACK) ---\n");
@@ -136,7 +112,7 @@ int main(void)
     const uint8_t receiver_count = 1;
     const uint8_t initial_ack_slot = 0;
 
-    res = proto_stream_tx_start(transmitter_id, session_id, receiver_list, receiver_count, initial_ack_slot);
+    proto_result_t res = proto_stream_tx_start(&ctx[0], transmitter_id, session_id, receiver_list, receiver_count, initial_ack_slot);
     if (res != PROTO_RESULT_OK)
     {
         printf("Node 0x00: Failed to start streaming transmitter: %d\n", res);
@@ -145,7 +121,7 @@ int main(void)
     printf("Node 0x00: Streaming transmitter started (ID=0x%02X, Session=0x%02X)\n", transmitter_id, session_id);
 
     /* Receiver (node 1) starts as receiver */
-    res = proto_stream_rx_start(0x01); /* receiver_id = 0x01 */
+    res = proto_stream_rx_start(&ctx[1], 0x01); /* receiver_id = 0x01 */
     if (res != PROTO_RESULT_OK)
     {
         printf("Node 0x01: Failed to start streaming receiver: %d\n", res);
@@ -154,21 +130,16 @@ int main(void)
     printf("Node 0x01: Streaming receiver started (ID=0x01)\n");
 
     /* Now we need to let the protocols exchange the CONN_REQ and CONN_ACK frames.
-       The transmitter will send CONN_REQ to the receiver when we call proto_poll() on the transmitter side.
        We'll alternate polling both nodes to allow the handshake to complete. */
 
     printf("Exchanging handshake frames...\n");
-    for (int handshake_step = 0; handshake_step < 10; handshake_step++)
+    for (int handshake_step = 0; handshake_step < 200; handshake_step++)
     {
-        /* Poll transmitter */
-        current_node = 0;
-        proto_init_current();
-        proto_poll();
+        /* Poll transmitter (node 0) */
+        proto_poll(&ctx[0]);
 
-        /* Poll receiver */
-        current_node = 1;
-        proto_init_current();
-        proto_poll();
+        /* Poll receiver (node 1) */
+        proto_poll(&ctx[1]);
     }
 
     /* Check if the transmitter has moved to STREAM_SENDING state (handshake succeeded) */
@@ -194,7 +165,7 @@ int main(void)
 
         /* Transmitter sends the block */
         printf("Node 0x00 TX: Sending block %zu\n", block);
-        res = proto_stream_tx_send_block(block_data);
+        res = proto_stream_tx_send_block(&ctx[0], block_data);
         if (res != PROTO_RESULT_OK)
         {
             printf("Node 0x00: Failed to send block %zu: %d\n", block, res);
@@ -203,22 +174,18 @@ int main(void)
 
         /* Allow time for transmission and ACK handling */
         printf("  Processing transmission and ACKs...\n");
-        for (int poll_round = 0; poll_round < 20; poll_round++)
+        for (int poll_round = 0; poll_round < 100; poll_round++)
         {
             /* Poll transmitter */
-            current_node = 0;
-            proto_init_current();
-            proto_poll();
+            proto_poll(&ctx[0]);
 
             /* Poll receiver */
-            current_node = 1;
-            proto_init_current();
-            proto_poll();
+            proto_poll(&ctx[1]);
         }
 
         /* Check if receiver got the block */
         uint8_t rx_block[block_data_size];
-        res = proto_stream_rx_get_block(rx_block);
+        res = proto_stream_rx_get_block(&ctx[1], rx_block);
         if (res == PROTO_RESULT_OK)
         {
             printf("Node 0x01 RX: Received block %zu\n", block);
@@ -262,26 +229,22 @@ int main(void)
     /* Transmitter sends CLOSE with reason COMPLETE (0x00) */
     const uint8_t close_reason = 0x00; /* COMPLETE */
     printf("Node 0x00 TX: Sending CLOSE (reason=COMPLETE)\n");
-    proto_stream_tx_close(close_reason);
+    proto_stream_tx_close(&ctx[0], close_reason);
 
     /* Allow time for CLOSE transmission and processing */
     printf("  Processing CLOSE...\n");
-    for (int poll_round = 0; poll_round < 20; poll_round++)
+    for (int poll_round = 0; poll_round < 100; poll_round++)
     {
         /* Poll transmitter */
-        current_node = 0;
-        proto_init_current();
-        proto_poll();
+        proto_poll(&ctx[0]);
 
         /* Poll receiver */
-        current_node = 1;
-        proto_init_current();
-        proto_poll();
+        proto_poll(&ctx[1]);
     }
 
     /* Check if receiver got the CLOSE (by attempting to get a block - should fail) */
     uint8_t dummy[1];
-    res = proto_stream_rx_get_block(dummy);
+    res = proto_stream_rx_get_block(&ctx[1], dummy);
     if (res != PROTO_RESULT_OK)
     {
         printf("Node 0x01: No more blocks available (connection closed) as expected.\n");

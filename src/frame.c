@@ -25,7 +25,7 @@ frame_result_t frame_parser_parse_byte(frame_parser_t *parser, uint8_t byte, uin
     switch (parser->state)
     {
         case FRAME_STATE_SEEK_SYNC:
-            // Check SYNC and SYNC_EXT
+            
             if ((byte & FRAME_SYNC_MASK) == FRAME_SYNC_VALUE && (byte & FRAME_SYNC_EXT_MASK) == FRAME_SYNC_EXT_VALUE)
             {
                 parser->control = byte;
@@ -51,7 +51,7 @@ frame_result_t frame_parser_parse_byte(frame_parser_t *parser, uint8_t byte, uin
             }
             else if (parser->length > PROTO_MAX_PAYLOAD_LENGTH)
             {
-                // Length exceeds maximum allowed payload length
+                
                 parser->state = FRAME_STATE_SEEK_SYNC;
                 result = FRAME_RESULT_ERROR_LENGTH;
             }
@@ -76,17 +76,17 @@ frame_result_t frame_parser_parse_byte(frame_parser_t *parser, uint8_t byte, uin
             break;
 
         case FRAME_STATE_VALIDATE_CRC:
-            // We expect two bytes of CRC, little endian (LSB first)
+            
             parser->crc_bytes[parser->crc_byte_index] = byte;
             parser->crc_byte_index++;
 
             if (parser->crc_byte_index == 2)
             {
-                // We have both CRC bytes
+                
                 uint16_t received_crc = (uint16_t)parser->crc_bytes[0] | ((uint16_t)parser->crc_bytes[1] << 8);
 
-                // Compute CRC over control, address, length, and payload
-                uint8_t crc_buffer[PROTO_CRC_BUFFER_SIZE]; // max 3 + PROTO_MAX_PAYLOAD_LENGTH
+                
+                uint8_t crc_buffer[PROTO_CRC_BUFFER_SIZE]; 
                 uint8_t *crc_ptr = crc_buffer;
                 *crc_ptr++ = parser->control;
                 *crc_ptr++ = parser->address;
@@ -99,7 +99,7 @@ frame_result_t frame_parser_parse_byte(frame_parser_t *parser, uint8_t byte, uin
 
                 if (computed_crc == received_crc)
                 {
-                    // Frame is valid
+                    
                     *out_control = parser->control;
                     *out_address = parser->address;
                     for (int i = 0; i < parser->payload_index; i++)
@@ -120,7 +120,7 @@ frame_result_t frame_parser_parse_byte(frame_parser_t *parser, uint8_t byte, uin
             }
             else
             {
-                // Still waiting for the second CRC byte
+                
                 result = FRAME_RESULT_INCOMPLETE;
             }
             break;
@@ -131,14 +131,14 @@ frame_result_t frame_parser_parse_byte(frame_parser_t *parser, uint8_t byte, uin
 
 void frame_build(uint8_t control, uint8_t address, const uint8_t *payload, uint8_t len, uint8_t *out_buffer, uint8_t *out_length)
 {
-    // Check length validity
+    
     if (len == 0 || len > PROTO_MAX_PAYLOAD_LENGTH)
     {
         *out_length = 0;
         return;
     }
 
-    // Build the frame: control, address, length, payload, CRC
+    
     uint8_t *ptr = out_buffer;
     *ptr++ = control;
     *ptr++ = address;
@@ -148,8 +148,8 @@ void frame_build(uint8_t control, uint8_t address, const uint8_t *payload, uint8
         *ptr++ = payload[i];
     }
 
-    // Compute CRC over control, address, length, and payload
-    uint8_t crc_buffer[PROTO_CRC_BUFFER_SIZE]; // max 3 + PROTO_MAX_PAYLOAD_LENGTH
+    
+    uint8_t crc_buffer[PROTO_CRC_BUFFER_SIZE]; 
     uint8_t *crc_ptr = crc_buffer;
     *crc_ptr++ = control;
     *crc_ptr++ = address;
@@ -160,7 +160,7 @@ void frame_build(uint8_t control, uint8_t address, const uint8_t *payload, uint8
     }
     uint16_t crc = crc16_ccitt_false(crc_buffer, (uint16_t)(crc_ptr - crc_buffer));
 
-    // Store CRC little endian: LSB first
+    
     *ptr++ = (uint8_t)(crc & 0x00FF);
     *ptr++ = (uint8_t)((crc & 0xFF00) >> 8);
 

@@ -74,4 +74,4 @@ frame_result_t frame_parser_parse_byte(frame_parser_t *parser, uint8_t byte, uin
  */
 void frame_build(uint8_t control, uint8_t address, const uint8_t *payload, uint8_t len, uint8_t *out_buffer, uint8_t *out_length);
 
-#endif // FRAME_H
+#endif 

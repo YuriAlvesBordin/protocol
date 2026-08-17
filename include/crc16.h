@@ -12,4 +12,4 @@
  */
 uint16_t crc16_ccitt_false(const uint8_t *data, uint16_t length);
 
-#endif // CRC16_H
+#endif 

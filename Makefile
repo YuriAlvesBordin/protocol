@@ -7,25 +7,25 @@ CC ?= gcc
 CFLAGS ?= -Iinclude -Wall -Wextra -std=c99
 
 # Target executables
-TARGETS = example example_stream
+TARGETS = datagram_example streaming_example
 
-# Source files for example
-EXAMPLE_SRCS = src/example.c src/crc16.c src/frame.c src/protocol.c src/stream_rx.c src/stream_tx.c src/datagram.c
-# Source files for example_stream
-EXAMPLE_STREAM_SRCS = src/example_stream.c src/crc16.c src/frame.c src/protocol.c src/stream_rx.c src/stream_tx.c src/datagram.c
+# Source files for datagram example
+DATAGRAM_SRCS = src/datagram_example.c src/crc16.c src/frame.c src/protocol.c src/stream_rx.c src/stream_tx.c src/datagram.c
+# Source files for streaming example
+STREAMING_SRCS = src/streaming_example.c src/crc16.c src/frame.c src/protocol.c src/stream_rx.c src/stream_tx.c src/datagram.c
 
 # Object files
-EXAMPLE_OBJS = $(EXAMPLE_SRCS:.c=.o)
-EXAMPLE_STREAM_OBJS = $(EXAMPLE_STREAM_SRCS:.c=.o)
+DATAGRAM_OBJS = $(DATAGRAM_SRCS:.c=.o)
+STREAMING_OBJS = $(STREAMING_SRCS:.c=.o)
 
 # Default target
 all: $(TARGETS)
 
 # Link the targets
-example: $(EXAMPLE_OBJS)
+datagram_example: $(DATAGRAM_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
-example_stream: $(EXAMPLE_STREAM_OBJS)
+streaming_example: $(STREAMING_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
 # Compile source files to object files
@@ -34,7 +34,7 @@ example_stream: $(EXAMPLE_STREAM_OBJS)
 
 # Clean up generated files
 clean:
-	rm -f $(EXAMPLE_OBJS) $(EXAMPLE_STREAM_OBJS) $(TARGETS)
+	rm -f $(DATAGRAM_OBJS) $(STREAMING_OBJS) $(TARGETS)
 
 # Phony targets
 .PHONY: all clean
