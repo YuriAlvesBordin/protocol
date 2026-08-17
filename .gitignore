@@ -1,0 +1,12 @@
+# Object files
+*.o
+# Executables
+datagram_example
+streaming_example
+# Build artifacts
+# (optional) IDE files
+.vscode/
+.idea/
+# OS files
+.DS_Store
+Thumbs.db
