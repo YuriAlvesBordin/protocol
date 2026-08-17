@@ -10,9 +10,22 @@ CFLAGS ?= -Iinclude -Wall -Wextra -std=c99
 TARGETS = datagram_example streaming_example
 
 # Source files for datagram example
-DATAGRAM_SRCS = src/datagram_example.c src/crc16.c src/frame.c src/protocol.c src/stream_rx.c src/stream_tx.c src/datagram.c
+DATAGRAM_SRCS = src/examples/datagram_example.c \
+                src/core/crc16.c \
+                src/core/frame.c \
+                src/core/protocol.c \
+                src/core/stream_rx.c \
+                src/core/stream_tx.c \
+                src/datagram/datagram.c
+
 # Source files for streaming example
-STREAMING_SRCS = src/streaming_example.c src/crc16.c src/frame.c src/protocol.c src/stream_rx.c src/stream_tx.c src/datagram.c
+STREAMING_SRCS = src/examples/streaming_example.c \
+                src/core/crc16.c \
+                src/core/frame.c \
+                src/core/protocol.c \
+                src/core/stream_rx.c \
+                src/core/stream_tx.c \
+                src/datagram/datagram.c
 
 # Object files
 DATAGRAM_OBJS = $(DATAGRAM_SRCS:.c=.o)
